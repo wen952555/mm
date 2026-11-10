@@ -17,7 +17,93 @@ import { initTelegramBotService } from './src/telegramBotService.ts';
 import { presenceTracker } from './src/presenceTracker.ts';
 import { generateRoomDeal } from './src/gameDeckService.ts';
 import { createDefaultBoardState, getSceneRequiredCoins, type AuthoritativeBoardState } from './src/gameLogic/index.ts';
-import { checkMahjongWin } from './src/engine/mahjongRules.ts';
+import { checkMahjongWin, computeMahjongSettlement } from './src/engine/mahjongRules.ts';
+
+function executeMahjongWinSettlement(room: any, winnerSeat: number, isFourHz: boolean, pPayload?: any) {
+  if (!room || !room.boardState) return;
+  room.boardState.winnerSeat = winnerSeat;
+  room.boardState.phase = 'ended';
+
+  const dealObj = room.deal || {};
+  const winnerHand = (dealObj.seatCards && dealObj.seatCards[winnerSeat] && dealObj.seatCards[winnerSeat].length > 0)
+    ? dealObj.seatCards[winnerSeat]
+    : (pPayload?.winningHand || (pPayload?.tile ? [pPayload.tile] : []));
+
+  const remWall = dealObj.remainingWall || [];
+  const sMode = room.sceneMode || 'hongzhong-6';
+
+  const stl = computeMahjongSettlement(
+    winnerSeat,
+    winnerHand,
+    pPayload?.winningMelds || [],
+    remWall,
+    sMode,
+    pPayload?.seatKongScores || [0, 0, 0, 0],
+    isFourHz
+  );
+
+  room.boardState.winDesc = stl.isFourHongzhong ? '摸到四张红中直接胡牌' : '自摸和牌';
+
+  // Authoritative database coin transfer with zero-sum guarantee
+  try {
+    const db = loadDatabase();
+    room.players?.forEach((pl: any) => {
+      if (pl && typeof pl.seat === 'number' && db.profiles?.[pl.id]) {
+        const delta = stl.netCoinsPerSeat[pl.seat] || 0;
+        db.profiles[pl.id].coins = Math.max(0, (db.profiles[pl.id].coins || 0) + delta);
+        broadcast({
+          type: 'user_coins_updated',
+          userId: pl.id,
+          coins: db.profiles[pl.id].coins,
+          delta,
+        });
+      }
+    });
+    saveDatabase(db);
+  } catch (e) {
+    console.error('Error settling mahjong coins in database:', e);
+  }
+
+  const huEvtPayload = {
+    action: 'hu',
+    seat: winnerSeat,
+    absSeat: winnerSeat,
+    winner: winnerSeat,
+    isFourHz: stl.isFourHongzhong,
+    winningHand: stl.winningHand,
+    winningMelds: stl.winningMelds,
+    maCount: stl.maCount,
+    maTiles: stl.maTiles,
+    hitMaCount: stl.hitMaCount,
+    payoutPerOpponent: stl.payoutPerOpponent,
+    netCoinsPerSeat: stl.netCoinsPerSeat,
+    rewardCoins: stl.netCoinsPerSeat[winnerSeat],
+    reason: stl.isFourHongzhong ? 'four_hongzhong' : 'zimo_hu',
+  };
+
+  broadcast({
+    type: 'game_event',
+    roomId: room.id,
+    seat: winnerSeat,
+    event: huEvtPayload,
+    payload: huEvtPayload,
+    boardState: room.boardState,
+  });
+
+  const targetSceneRoom = sceneWaitingRooms.get(room.id);
+  if (targetSceneRoom) {
+    targetSceneRoom.status = 'finished';
+    const disconnectedList = targetSceneRoom.players.filter((pl: any) => pl.isDisconnected);
+    if (disconnectedList.length > 0) {
+      targetSceneRoom.players = targetSceneRoom.players.filter((pl: any) => !pl.isDisconnected);
+      targetSceneRoom.players.forEach((pl: any, idx: number) => {
+        pl.seat = idx;
+        pl.isReady = false;
+      });
+      targetSceneRoom.status = 'waiting';
+    }
+  }
+}
 
 // Auto-detect and load .env from project directory, parent directory (~/.env), or HOME
 const possibleEnvPaths = [
@@ -1622,8 +1708,7 @@ wss.on('connection', (ws) => {
                 room.turnSeat = bs.turnSeat;
               }
             } else if (action === 'hu') {
-              bs.winnerSeat = seat;
-              bs.phase = 'ended';
+              executeMahjongWinSettlement(room, seat, Boolean(p.isFourHz), p);
             }
           }
 
@@ -2016,69 +2101,7 @@ setInterval(() => {
             const winRes = checkMahjongWin(hand as any, isHongzhongMode);
 
             if (isFourHz || winRes.win) {
-              room.boardState.winnerSeat = currentSeat;
-              room.boardState.phase = 'ended';
-              room.boardState.winDesc = isFourHz ? '摸到四张红中直接胡牌' : winRes.desc;
-
-              const perOppCoins = isFourHz ? 70 : 30;
-              const rewardCoins = perOppCoins * 3;
-
-              try {
-                const db = loadDatabase();
-                const curPl = room.players?.find((p: any) => p.seat === currentSeat);
-                if (curPl && db.profiles?.[curPl.id]) {
-                  db.profiles[curPl.id].coins = (db.profiles[curPl.id].coins || 0) + rewardCoins;
-                }
-                room.players?.forEach((pl: any) => {
-                  if (pl.seat !== currentSeat && db.profiles?.[pl.id]) {
-                    db.profiles[pl.id].coins = Math.max(0, (db.profiles[pl.id].coins || 0) - perOppCoins);
-                  }
-                });
-                saveDatabase(db);
-              } catch {}
-
-              broadcast({
-                type: 'game_event',
-                roomId: room.id,
-                seat: currentSeat,
-                event: {
-                  action: 'hu',
-                  seat: currentSeat,
-                  absSeat: currentSeat,
-                  winner: currentSeat,
-                  isFourHz,
-                  tile: drawnTile,
-                  rewardCoins,
-                  payoutPerOpponent: perOppCoins,
-                  reason: isFourHz ? 'four_hongzhong' : 'trustee_zimo_hu',
-                },
-                payload: {
-                  action: 'hu',
-                  seat: currentSeat,
-                  absSeat: currentSeat,
-                  winner: currentSeat,
-                  isFourHz,
-                  tile: drawnTile,
-                  rewardCoins,
-                  payoutPerOpponent: perOppCoins,
-                  reason: isFourHz ? 'four_hongzhong' : 'trustee_zimo_hu',
-                },
-                boardState: room.boardState,
-              });
-
-              const targetSceneRoom = sceneWaitingRooms.get(room.id);
-              if (targetSceneRoom) {
-                targetSceneRoom.status = 'finished';
-                const disconnectedList = targetSceneRoom.players.filter((pl: any) => pl.isDisconnected);
-                if (disconnectedList.length > 0) {
-                  targetSceneRoom.players = targetSceneRoom.players.filter((pl: any) => !pl.isDisconnected);
-                  targetSceneRoom.players.forEach((pl, idx) => {
-                    pl.seat = idx;
-                    (pl as any).isReady = false;
-                  });
-                  targetSceneRoom.status = 'waiting';
-                }
-              }
+              executeMahjongWinSettlement(room, currentSeat, isFourHz, { tile: drawnTile });
               continue;
             }
           }

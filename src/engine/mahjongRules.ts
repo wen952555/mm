@@ -169,6 +169,13 @@ function checkMeldsOnly(map: Record<string, number>, wildcards: number): boolean
   return false;
 }
 
+export function isYiWuJiuMa(t: MahjongTile): boolean {
+  if (!t) return false;
+  if (isHongzhong(t)) return true;
+  if (t.type === 'zi') return true;
+  return t.value === 1 || t.value === 5 || t.value === 9;
+}
+
 /**
  * Bird draw (抓鸟/抓码) calculation:
  * Standard Hongzhong: 1, 5, 9 of any suit or Hongzhong is a valid bird
@@ -176,7 +183,7 @@ function checkMeldsOnly(map: Record<string, number>, wildcards: number): boolean
 export function calculateZhuaMa(drawnTiles: MahjongTile[], baseStake: number): { hitCount: number; bonusStake: number; hits: MahjongTile[] } {
   const hits: MahjongTile[] = [];
   for (const t of drawnTiles) {
-    if (isHongzhong(t) || t.value === 1 || t.value === 5 || t.value === 9) {
+    if (isYiWuJiuMa(t)) {
       hits.push(t);
     }
   }
@@ -184,5 +191,100 @@ export function calculateZhuaMa(drawnTiles: MahjongTile[], baseStake: number): {
     hitCount: hits.length,
     bonusStake: hits.length * baseStake,
     hits,
+  };
+}
+
+export interface MahjongSettlementResult {
+  winnerSeat: number;
+  winningHand: MahjongTile[];
+  winningMelds: MahjongTile[][];
+  maCount: number;
+  maTiles: MahjongTile[];
+  hitMaCount: number;
+  payoutPerOpponent: number;
+  isFourHongzhong: boolean;
+  netCoinsPerSeat: [number, number, number, number];
+  seatKongScores: [number, number, number, number];
+}
+
+export function computeMahjongSettlement(
+  winnerSeat: number,
+  winningHand: MahjongTile[],
+  winningMelds: MahjongTile[][] = [],
+  remainingWall: MahjongTile[] = [],
+  sceneMode = 'hongzhong-6',
+  seatKongScores: [number, number, number, number] = [0, 0, 0, 0],
+  isFourHzOverride?: boolean
+): MahjongSettlementResult {
+  const isHongzhongMode = sceneMode.includes('hongzhong');
+  const baseMaCount = sceneMode.includes('10') ? 10 : 6;
+  const hzCount = (winningHand || []).filter(isHongzhong).length;
+  const isFourHongzhong = isFourHzOverride ?? (isHongzhongMode && hzCount >= 4);
+
+  let maCount = baseMaCount;
+  let hitMaCount = 0;
+  let payoutPerOpponent = 0;
+  let maTiles: MahjongTile[] = [];
+
+  if (isFourHongzhong) {
+    maCount = baseMaCount;
+    hitMaCount = baseMaCount;
+    payoutPerOpponent = 10 + hitMaCount * 10; // 70 or 110
+    maTiles = (remainingWall || []).slice(0, Math.min(maCount, remainingWall.length));
+    while (maTiles.length < maCount) {
+      maTiles.push({
+        id: `hz-win-${maTiles.length}`,
+        type: 'zi',
+        value: 5,
+        text: '红中',
+        color: '#DC2626',
+        isRedDragon: true,
+      });
+    }
+  } else {
+    const hasNoHongzhong = isHongzhongMode && hzCount === 0;
+    maCount = hasNoHongzhong ? baseMaCount + 2 : baseMaCount;
+    maTiles = (remainingWall || []).slice(0, Math.min(maCount, remainingWall.length));
+    if (maTiles.length < maCount) {
+      const suitTypes: Array<'wan' | 'tiao' | 'tong'> = ['wan', 'tiao', 'tong'];
+      const suitTexts: Record<string, string[]> = {
+        wan: ['', '一万', '二万', '三万', '四万', '五万', '六万', '七万', '八万', '九万'],
+        tiao: ['', '一条', '二条', '三条', '四条', '五条', '六条', '七条', '八条', '九条'],
+        tong: ['', '一筒', '二筒', '三筒', '四筒', '五筒', '六筒', '七筒', '八筒', '九筒'],
+      };
+      let idx = 0;
+      while (maTiles.length < maCount) {
+        const sType = suitTypes[idx % 3];
+        const val = (idx % 9) + 1;
+        maTiles.push({
+          id: `fallback-ma-${maTiles.length}`,
+          type: sType,
+          value: val,
+          text: suitTexts[sType][val],
+        });
+        idx++;
+      }
+    }
+    hitMaCount = maTiles.filter(isYiWuJiuMa).length;
+    payoutPerOpponent = 10 + hitMaCount * 10;
+  }
+
+  const netCoinsPerSeat: [number, number, number, number] = [0, 0, 0, 0];
+  for (let s = 0; s < 4; s++) {
+    const zimoDelta = s === winnerSeat ? payoutPerOpponent * 3 : -payoutPerOpponent;
+    netCoinsPerSeat[s] = zimoDelta + (seatKongScores[s] || 0);
+  }
+
+  return {
+    winnerSeat,
+    winningHand,
+    winningMelds,
+    maCount,
+    maTiles,
+    hitMaCount,
+    payoutPerOpponent,
+    isFourHongzhong,
+    netCoinsPerSeat,
+    seatKongScores,
   };
 }

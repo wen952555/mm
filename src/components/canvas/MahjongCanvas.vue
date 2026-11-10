@@ -2450,7 +2450,7 @@ const canHu = computed(() => {
  *      - 十码场：等于十码全中加底分，各得其他玩家110分，共330分
  *   2. 自摸手牌没有红中：奖励额外加2个码 (六码场变8码，十码场变12码)
  */
-function triggerMahjongWin(winnerSeat: number, isFourHongzhong = false) {
+function triggerMahjongWin(winnerSeat: number, isFourHongzhong = false, payloadData?: any) {
   if (hasWon.value || showSettlement.value || dealingPhase.value === 'settled') {
     console.warn('🛡️ [麻将结算防重] 已在结算状态，忽略重复调用与重复扣分');
     return;
@@ -2465,12 +2465,24 @@ function triggerMahjongWin(winnerSeat: number, isFourHongzhong = false) {
   const seatNames = ['您 (本席)', '东席 (南洋商贾)', '北席 (九龙棋杰)', '西席 (濠江赌客)'];
   const winnerName = seatNames[winnerSeat] || '雀圣';
 
-  const winnerHand = isPlayer ? myHand.value : (oppHands.value[winnerSeat - 1] || []);
-  const hzCountInHand = winnerHand.filter(isHongzhong).length;
+  // 1. 同步全网权威胡牌手牌与亮副 (若为网络或托管结算，将赢家真实14张手牌同步至各端视图)
+  let winnerHand = isPlayer ? myHand.value : (oppHands.value[winnerSeat - 1] || []);
+  if (payloadData?.winningHand && Array.isArray(payloadData.winningHand) && payloadData.winningHand.length > 0) {
+    winnerHand = payloadData.winningHand;
+    if (isPlayer) {
+      myHand.value = winnerHand;
+    } else {
+      oppHands.value[winnerSeat - 1] = winnerHand;
+      if (payloadData.winningMelds && Array.isArray(payloadData.winningMelds)) {
+        oppMelds.value[winnerSeat - 1] = payloadData.winningMelds;
+      }
+    }
+  }
 
+  const hzCountInHand = winnerHand.filter(isHongzhong).length;
   const baseCodes = baseMaCount.value; // 6 or 10
   const isHzMode = isHongzhongMode.value;
-  const fourHzWin = isHzMode && (isFourHongzhong || hzCountInHand === 4);
+  const fourHzWin = isHzMode && (isFourHongzhong || hzCountInHand === 4 || Boolean(payloadData?.isFourHz));
 
   let maCount = baseCodes;
   let hitCount = 0;
@@ -2478,10 +2490,29 @@ function triggerMahjongWin(winnerSeat: number, isFourHongzhong = false) {
   let fansList: string[] = [];
   let rewardMaTiles: MahjongTile[] = [];
 
-  if (fourHzWin) {
+  // 2. 如果收到服务端/发起方的权威抓码结果，直接采用权威数据，保证全服各机呈现完全相同开码与分值！
+  if (payloadData?.maTiles && Array.isArray(payloadData.maTiles) && payloadData.maTiles.length > 0) {
+    rewardMaTiles = payloadData.maTiles;
+    maCount = payloadData.maCount || rewardMaTiles.length;
+    hitCount = payloadData.hitMaCount !== undefined ? payloadData.hitMaCount : rewardMaTiles.filter(isYiWuJiuMa).length;
+    payoutPerOpponent = payloadData.payoutPerOpponent !== undefined ? payloadData.payoutPerOpponent : (10 + hitCount * 10);
+    if (fourHzWin) {
+      fansList = [
+        '摸到四张红中 · 天降大满贯！',
+        baseCodes === 6 ? '红中六码全中 (奖60分)' : '红中十码全中 (奖100分)',
+        '各得其他玩家底分10分',
+      ];
+    } else {
+      const hasNoHongzhong = isHzMode && hzCountInHand === 0;
+      if (hasNoHongzhong) {
+        fansList.push(`自摸和牌 (手牌无红中奖励加2码，共${maCount}码)`);
+      } else {
+        fansList.push(isHzMode ? `红中百搭自摸和牌 (奖${maCount}码)` : `自摸和牌 (奖${maCount}码)`);
+      }
+      fansList.push(`自摸奖码 (${maCount}码中${hitCount}码)`);
+    }
+  } else if (fourHzWin) {
     // 规则：摸到四张红中直接结束游戏！
-    // 六码场：6码全中 (6*10=60分) + 底分10分 = 各得70分，共210分
-    // 十码场：10码全中 (10*10=100分) + 底分10分 = 各得110分，共330分
     maCount = baseCodes;
     hitCount = baseCodes;
     payoutPerOpponent = 10 + hitCount * 10; // 70 or 110
@@ -2499,13 +2530,13 @@ function triggerMahjongWin(winnerSeat: number, isFourHongzhong = false) {
         value: 5,
         text: '红中',
         color: '#DC2626',
+        isRedDragon: true,
       });
     }
   } else {
     // 普通自摸 / 红中自摸
     const hasNoHongzhong = isHzMode && hzCountInHand === 0;
     if (hasNoHongzhong) {
-      // 规则：红中场自摸玩家手牌没有红中的加两个码 (六码场变8码，十码场变12码)
       maCount = baseCodes + 2;
       fansList.push(`自摸和牌 (手牌无红中奖励加2码，共${maCount}码)`);
     } else {
@@ -2514,7 +2545,6 @@ function triggerMahjongWin(winnerSeat: number, isFourHongzhong = false) {
     }
 
     rewardMaTiles = wallPool.slice(0, Math.min(maCount, wallPool.length));
-    // 牌墙不足时补充牌展示完整奖码
     if (rewardMaTiles.length < maCount) {
       const extraPool = createTilePool();
       while (rewardMaTiles.length < maCount && extraPool.length > 0) {
@@ -2527,22 +2557,27 @@ function triggerMahjongWin(winnerSeat: number, isFourHongzhong = false) {
     fansList.push(`自摸奖码 (${maCount}码中${hitCount}码)`);
   }
 
-  // 综合结算：基础自摸 + 全席位杠分净收支 (赢家自摸+3*底码，输家各付底码，并结清所有明杠/暗杠点数)
+  // 3. 权威零和算分：优先映射服务端的 netCoinsPerSeat（绝对席位映射至本地相对视角），确保零水损与零分值流失
   const netCoinsPerSeat = [0, 0, 0, 0];
-  for (let s = 0; s < 4; s++) {
-    const zimoDelta = s === winnerSeat ? payoutPerOpponent * 3 : -payoutPerOpponent;
-    netCoinsPerSeat[s] = zimoDelta + seatKongScores.value[s];
+  if (payloadData?.netCoinsPerSeat && Array.isArray(payloadData.netCoinsPerSeat) && payloadData.netCoinsPerSeat.length === 4) {
+    for (let relS = 0; relS < 4; relS++) {
+      const absS = relToAbsSeat(relS);
+      netCoinsPerSeat[relS] = payloadData.netCoinsPerSeat[absS];
+    }
+  } else {
+    for (let s = 0; s < 4; s++) {
+      const zimoDelta = s === winnerSeat ? payoutPerOpponent * 3 : -payoutPerOpponent;
+      netCoinsPerSeat[s] = zimoDelta + seatKongScores.value[s];
+    }
   }
 
-  // 本席玩家 (seat 0) 实际总盈亏 (如明杠得10分，对手自摸50分，则本席实输 -50 + 10 = -40分)
+  // 本席玩家 (seat 0) 实际总盈亏
   const rewardCoins = netCoinsPerSeat[0];
-  let totalWon = netCoinsPerSeat[winnerSeat];
   let kongBonusTotal = Math.max(0, seatKongScores.value[0]);
   const opponentPayouts = [0, 0, 0];
   const oppNames = ['东席', '北席', '西席'];
 
   if (isPlayer) {
-    // 玩家自己自摸和牌
     for (let i = 0; i < 3; i++) {
       const oppSeat = i + 1;
       const actualLoss = Math.max(0, -netCoinsPerSeat[oppSeat]);
@@ -2555,17 +2590,15 @@ function triggerMahjongWin(winnerSeat: number, isFourHongzhong = false) {
       fansList.push(`本席杠牌进账 (+${seatKongScores.value[0]}分)`);
     }
   } else {
-    // 其他玩家自摸和牌
     for (let i = 0; i < 3; i++) {
       const oppSeat = i + 1;
       if (oppSeat === winnerSeat) {
-        opponentPayouts[i] = netCoinsPerSeat[oppSeat]; // 自摸赢家实赢总分
+        opponentPayouts[i] = netCoinsPerSeat[oppSeat];
       } else {
-        opponentPayouts[i] = Math.max(0, -netCoinsPerSeat[oppSeat]); // 输家实输总分 (含被杠多输)
+        opponentPayouts[i] = Math.max(0, -netCoinsPerSeat[oppSeat]);
       }
     }
 
-    // 将玩家杠分收益与冲抵明细加入 fansList 供弹窗清晰展示
     if (seatKongScores.value[0] > 0) {
       for (const rec of kongRecords.value) {
         if (rec.includes('您')) {
@@ -2579,7 +2612,6 @@ function triggerMahjongWin(winnerSeat: number, isFourHongzhong = false) {
       fansList.push(`被杠扣除${-seatKongScores.value[0]}分，冲抵后实输${-rewardCoins}分`);
     }
 
-    // 记录被玩家杠的对手多输分
     for (let i = 0; i < 3; i++) {
       const oppSeat = i + 1;
       if (oppSeat !== winnerSeat && seatKongScores.value[oppSeat] < 0) {
@@ -2638,6 +2670,9 @@ function triggerMahjongWin(winnerSeat: number, isFourHongzhong = false) {
     sendGameMove('hu', {
       winner: mySeat.value,
       isFourHz: fourHzWin,
+      winningHand: myHand.value,
+      winningMelds: meldedTiles.value,
+      seatKongScores: seatKongScores.value,
       fan: 1 + hitCount,
       rewardCoins,
       payoutPerOpponent,
@@ -2648,7 +2683,7 @@ function triggerMahjongWin(winnerSeat: number, isFourHongzhong = false) {
   try {
     localStorage.removeItem('app_active_game_lock');
   } catch {}
-  emit('game-over', { gameType: 'mahjong', winnerSeat });
+  emit('game-over', { gameType: 'mahjong', winnerSeat, rewardCoins });
 
   drawTable();
 }
@@ -3996,7 +4031,7 @@ function handleRemoteGameEvent(evtAbsSeat: number, evt: any) {
     saveLocalSnapshot();
   } else if (evt.action === 'hu') {
     if (hasWon.value || showSettlement.value || dealingPhase.value === 'settled') return;
-    triggerMahjongWin(relSeat, Boolean(evt.isFourHz));
+    triggerMahjongWin(relSeat, Boolean(evt.isFourHz), evt);
   } else if (evt.action === 'pass') {
     if (turnPlayer.value === relSeat) {
       passTurnToNext(relSeat);

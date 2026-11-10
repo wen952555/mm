@@ -2170,9 +2170,13 @@ export async function handleApiRoute(
         }
 
         if (existing) {
-          // 同步玩家对局结算后的真实积分与筹码资产
-          if (typeof payload.profile.coins === 'number' && !isNaN(payload.profile.coins)) {
-            existing.coins = Math.max(0, Math.floor(Number(payload.profile.coins)));
+          // 服务端资产权威中心：仅当服务端无筹码记录时初始化，绝不允许客户端覆盖服务端权威筹码余额，防止断线冲抵丢失！
+          if (typeof existing.coins !== 'number' || isNaN(existing.coins)) {
+            if (typeof payload.profile.coins === 'number' && !isNaN(payload.profile.coins)) {
+              existing.coins = Math.max(0, Math.floor(Number(payload.profile.coins)));
+            } else {
+              existing.coins = 2000;
+            }
           }
           if (payload.profile.name) existing.name = payload.profile.name;
           if (payload.profile.avatar) existing.avatar = payload.profile.avatar;
