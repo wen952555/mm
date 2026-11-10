@@ -1,0 +1,12 @@
+{
+  "appId": "com.guocui.chess",
+  "appName": "三大经典国粹棋牌",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

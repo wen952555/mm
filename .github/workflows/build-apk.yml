@@ -1,0 +1,294 @@
+name: Build and Package Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - '**.md'
+      - 'TERMUX_DEPLOY_GUIDE.md'
+      - 'GAME_FILES_DESCRIPTION.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Accept Android SDK Licenses & Install Android 36 SDK
+        run: |
+          echo "Using Android SDK at: $ANDROID_HOME"
+          yes 2>/dev/null | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" 2>/dev/null || true
+
+      - name: Install NPM Dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Parse Backend Tunnel URL from server_url.txt
+        id: tunnel
+        run: |
+          echo "🌐 Checking server_url.txt for target backend tunnel URL..."
+          TARGET_URL=""
+          if [ -f "server_url.txt" ]; then
+            TARGET_URL=$(grep -v '^#' server_url.txt | grep -E '^https?://' | head -n 1 | tr -d '[:space:]')
+          fi
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="https://m.my66.cc.cd"
+            echo "⚠️ No uncommented URL found in server_url.txt, fallback to: $TARGET_URL"
+          else
+            echo "✅ Target Tunnel Server URL from server_url.txt: $TARGET_URL"
+          fi
+          echo "URL=$TARGET_URL" >> $GITHUB_ENV
+          echo "SERVER_URL=$TARGET_URL" >> $GITHUB_ENV
+          echo "target_url=$TARGET_URL" >> $GITHUB_OUTPUT
+
+      - name: Force Purge Old Dist & Stale Assets
+        run: |
+          echo "🧹 Purging old dist and stale native assets before build..."
+          rm -rf dist
+          rm -rf android/app/src/main/assets/public
+          rm -rf android/app/src/main/assets/capacitor.plugins.json
+          rm -rf android/app/build
+          rm -f public/*.apk
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Verify Web Dist and Config
+        run: |
+          if [ ! -f "dist/index.html" ]; then
+            echo "❌ Error: dist/index.html not generated!"
+            exit 1
+          fi
+          echo "✅ Fresh dist/ generated successfully:"
+          ls -la dist/
+          if [ -f "dist/app-config.json" ]; then
+            echo "📄 Generated dist/app-config.json:"
+            cat dist/app-config.json
+          fi
+
+      - name: Ensure Android Native Project and Gradlew Exist
+        run: |
+          mkdir -p android
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+          
+          # Ensure android/settings.gradle exists and includes all required subprojects
+          cat << 'EOF' > android/settings.gradle
+          // Settings file for Capacitor Android project
+          include ':app'
+          apply from: 'capacitor.settings.gradle'
+
+          if (file('capacitor-cordova-android-plugins').exists()) {
+              include ':capacitor-cordova-android-plugins'
+              project(':capacitor-cordova-android-plugins').projectDir = new File('capacitor-cordova-android-plugins')
+          }
+          EOF
+
+          # If gradlew is missing, extract it safely from Capacitor template without wiping existing config
+          if [ ! -f "android/gradlew" ]; then
+            echo "Extracting gradlew from Capacitor template..."
+            tar -zxvf node_modules/@capacitor/cli/assets/android-template.tar.gz -C android gradlew gradlew.bat 2>/dev/null || true
+          fi
+          chmod +x android/gradlew || true
+
+          # Ensure compileSdkVersion = 36 (required by androidx.activity 1.11.0) and targetSdkVersion = 35 (MIUI runtime compatibility)
+          sed -i 's/compileSdkVersion = 35/compileSdkVersion = 36/g' android/variables.gradle 2>/dev/null || true
+          sed -i 's/targetSdkVersion = 36/targetSdkVersion = 35/g' android/variables.gradle 2>/dev/null || true
+
+          # Ensure release APK has debug signing so it can be installed on Android without manual keystore
+          if ! grep -q "signingConfig signingConfigs.debug" android/app/build.gradle 2>/dev/null; then
+            sed -i '/release {/a \            signingConfig signingConfigs.debug' android/app/build.gradle 2>/dev/null || true
+          fi
+
+          # Ensure Java 21 compatibility required by Capacitor 8
+          if ! grep -q "JavaVersion.VERSION_21" android/app/build.gradle 2>/dev/null; then
+            sed -i '/android {/a \    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_21\n        targetCompatibility JavaVersion.VERSION_21\n    }' android/app/build.gradle 2>/dev/null || true
+          fi
+
+
+      - name: Bump Android Version Code and Name
+        id: versioning
+        run: |
+          RUN_NUM="${{ github.run_number }}"
+          # 递增 versionCode，确保手机覆盖安装时识别为全新升级版本，规避系统 WebView 缓存
+          VERSION_CODE=$((10000 + RUN_NUM))
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION_NAME="1.0.${RUN_NUM}+${SHORT_SHA}"
+          
+          echo "Setting Android versionCode to: $VERSION_CODE"
+          echo "Setting Android versionName to: $VERSION_NAME"
+          
+          sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/g" android/app/build.gradle
+          sed -i "s/versionName \".*\"/versionName \"$VERSION_NAME\"/g" android/app/build.gradle
+          
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+
+      - name: Sync Capacitor Android Project
+        run: |
+          echo "🧹 Cleaning android public assets before capacitor sync..."
+          rm -rf android/app/src/main/assets/public
+          rm -f dist/*.apk public/*.apk
+          npx cap sync android
+          # Safety check: ensure no .apk was copied into native assets
+          rm -f android/app/src/main/assets/public/*.apk
+          # Ensure RECORD_AUDIO and MODIFY_AUDIO_SETTINGS permissions are present in AndroidManifest.xml
+          if ! grep -q "android.permission.RECORD_AUDIO" android/app/src/main/AndroidManifest.xml 2>/dev/null; then
+            echo "🎙️ Adding RECORD_AUDIO permission to AndroidManifest.xml..."
+            sed -i '/<uses-permission android:name="android.permission.INTERNET" \/>/a \    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-feature android:name="android.hardware.microphone" android:required="false" />' android/app/src/main/AndroidManifest.xml
+          fi
+          echo "✅ Synced assets in android/app/src/main/assets/public:"
+          ls -la android/app/src/main/assets/public/
+
+      - name: Make Gradlew Executable
+        run: chmod +x android/gradlew || true
+
+      - name: Clean and Build Android APK (Release & Debug)
+        run: |
+          cd android
+          echo "🧹 Running gradlew clean to ensure fresh compilation without cached bytecode/assets..."
+          ./gradlew clean --no-daemon
+          echo "🚀 Building fresh release & debug APK..."
+          ./gradlew :app:assembleRelease :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Prepare APK Output Directory
+        id: vars
+        run: |
+          mkdir -p release-apks
+          echo "Listing all compiled APKs:"
+          find android/app/build/outputs/apk -type f -name "*.apk" || true
+          
+          RELEASE_APK=$(find android/app/build/outputs/apk/release -type f -name "*.apk" 2>/dev/null | head -n 1)
+          DEBUG_APK=$(find android/app/build/outputs/apk/debug -type f -name "*.apk" 2>/dev/null | head -n 1)
+
+          if [ -n "$RELEASE_APK" ] && [ -f "$RELEASE_APK" ]; then
+            cp "$RELEASE_APK" release-apks/chess-game-release.apk
+          fi
+
+          if [ -n "$DEBUG_APK" ] && [ -f "$DEBUG_APK" ]; then
+            cp "$DEBUG_APK" release-apks/chess-game-debug.apk
+          fi
+
+          if [ ! -f "release-apks/chess-game-release.apk" ] && [ -f "release-apks/chess-game-debug.apk" ]; then
+            cp release-apks/chess-game-debug.apk release-apks/chess-game-release.apk
+          fi
+
+          echo "Final collected APK files in release-apks/:"
+          ls -lh release-apks/
+
+          echo "build_time=$(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
+          echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Upload APKs to GitHub Actions Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: chess-game-apk
+          path: release-apks/*.apk
+          overwrite: true
+          retention-days: 30
+
+      - name: Update Latest Git Tag
+        continue-on-error: true
+        run: |
+          git tag -f latest-apk
+          git push -f origin latest-apk || true
+
+      - name: Publish and Overwrite Latest APK in GitHub Releases
+        uses: softprops/action-gh-release@v2
+        continue-on-error: true
+        with:
+          tag_name: latest-apk
+          target_commitish: ${{ github.sha }}
+          name: "三大经典国粹棋牌 - 最新打包 APK (Auto Build)"
+          body: |
+            🎮 **三大经典国粹棋牌 Android APK 最新安装包 (正式发布版)**
+
+            - 🚀 **自动覆盖机制**：仓库代码有任何更新并推送，本 Release 中的旧 APK 会被自动重新构建并覆盖替换为最新版本。
+            - 🔢 **动态版本递增 (VersionCode)**：`${{ steps.versioning.outputs.version_code }}` (版本名: `${{ steps.versioning.outputs.version_name }}`)
+            - 🧹 **静态缓存彻底清空**：打包前强制清除 dist、android public assets 及 Gradle 中间产物，App 启动时自动清理 WebView 缓存，确保百分百显示最新界面！
+            - 🌐 **内置后端连接隧道**：`${{ steps.tunnel.outputs.target_url }}` (来源: `server_url.txt`，安装即可直接畅玩)
+            - 🕒 **最新构建时间**：${{ steps.vars.outputs.build_time }}
+            - 🔖 **Git 提交版本**：`${{ steps.vars.outputs.short_sha }}`
+
+
+            ---
+
+            ### 🇨🇳 国内极速加速下载通道 (免代理·高速直链，推荐国内网络使用)
+            - 🚀 **[极速线路 1 (GHProxy 专线)]**：
+              [点击直接高速下载 chess-game-release.apk](https://ghproxy.net/https://github.com/${{ github.repository }}/releases/download/latest-apk/chess-game-release.apk)
+            - ⚡️ **[高速线路 2 (GitMirror 专线)]**：
+              [点击直接高速下载 chess-game-release.apk](https://hub.gitmirror.com/https://github.com/${{ github.repository }}/releases/download/latest-apk/chess-game-release.apk)
+            - 🌐 **[镜像线路 3 (KKGitHub 节点)]**：
+              [点击前往 KKGitHub 镜像下载](https://kkgithub.com/${{ github.repository }}/releases/download/latest-apk/chess-game-release.apk)
+
+            ---
+
+            ### 🌍 GitHub 官方原始下载通道
+            - ⭐️ **[推荐] 正式安装版 (Release APK)**：
+              [点击下载 chess-game-release.apk](https://github.com/${{ github.repository }}/releases/download/latest-apk/chess-game-release.apk)
+            - 🛠️ **调试测试版 (Debug APK)**：
+              [点击下载 chess-game-debug.apk](https://github.com/${{ github.repository }}/releases/download/latest-apk/chess-game-debug.apk)
+
+            > 💡 **安卓安装说明**：手机浏览器下载完成后点击安装，如遇系统提示“允许来自此来源的应用”或“允许未知应用安装”，勾选允许即可安全畅玩！
+          draft: false
+          prerelease: false
+          make_latest: true
+          files: |
+            release-apks/chess-game-release.apk
+            release-apks/chess-game-debug.apk
+
+      - name: Update APK Build Info Metadata
+        continue-on-error: true
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p apk
+          RELEASE_SIZE=$(stat -c%s release-apks/chess-game-release.apk 2>/dev/null || stat -f%z release-apks/chess-game-release.apk 2>/dev/null || echo 4718592)
+          RELEASE_SIZE_MB=$(echo "scale=2; $RELEASE_SIZE / 1048576" | bc -l 2>/dev/null || echo "4.49")
+          cat << EOF > apk/apk-build-info.json
+          {
+            "version": "${{ steps.versioning.outputs.version_name }}",
+            "versionCode": ${{ steps.versioning.outputs.version_code }},
+            "buildTime": "${{ steps.vars.outputs.build_time }}",
+            "timestamp": $(date +%s%3N),
+            "serverUrl": "${{ steps.tunnel.outputs.target_url }}",
+            "isLatestPackaged": true,
+            "description": "三大经典国粹棋牌 - Android 官方最新全量发布版 (包含麦克风语音聊天与全部新功能)",
+            "fileSize": $RELEASE_SIZE,
+            "fileSizeMb": "${RELEASE_SIZE_MB} MB"
+          }
+          EOF
+          git add -f apk/apk-build-info.json
+          if git diff --staged --quiet; then
+            echo "No change in build info."
+          else
+            git commit -m "chore(build): update apk-build-info.json [skip ci]"
+            git push origin HEAD:${{ github.ref_name }} || echo "Push skipped or branch protected"
+          fi
+

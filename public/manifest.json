@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "三大经典国粹棋牌 · Go茶楼",
+  "short_name": "国粹棋牌",
+  "description": "集结经典烟三、水镜十三水、经典国标麻将三大经典棋牌。支持Android Termux部署与实时WebSocket对战。",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "theme_color": "#12100E",
+  "background_color": "#12100E",
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

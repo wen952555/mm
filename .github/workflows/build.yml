@@ -1,0 +1,64 @@
+name: Build and Commit Dist
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Parse Backend Tunnel URL from server_url.txt
+        run: |
+          if [ -f "server_url.txt" ]; then
+            TARGET_URL=$(grep -v '^#' server_url.txt | grep -E '^https?://' | head -n 1 | tr -d '[:space:]')
+            if [ -n "$TARGET_URL" ]; then
+              echo "Target Tunnel URL: $TARGET_URL"
+              echo "URL=$TARGET_URL" >> $GITHUB_ENV
+              echo "SERVER_URL=$TARGET_URL" >> $GITHUB_ENV
+            fi
+          fi
+
+      - name: Build Dist
+        run: |
+          rm -rf dist
+          npm run build
+          if [ -f "dist/app-config.json" ]; then
+            cat dist/app-config.json
+          fi
+
+
+      - name: Upload Dist Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-build
+          path: dist/
+
+
+
+      - name: Create Release Archive
+        continue-on-error: true
+        run: tar -czf dist.tar.gz dist/
+
+      - name: Publish Release with dist.tar.gz
+        uses: softprops/action-gh-release@v2
+        continue-on-error: true
+        with:
+          tag_name: dist-latest
+          name: "Latest Prebuilt Dist Assets"
+          files: dist.tar.gz

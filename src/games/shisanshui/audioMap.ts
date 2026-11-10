@@ -1,0 +1,68 @@
+/**
+ * 水镜十三水 / 十三张 (Shisanshui) 独立语音与音效映射字典
+ */
+export const SHISANSHUI_AUDIO_MAP: Record<string, string> = {
+  // 比水与判定
+  '倒水': '/audio/daoshui.mp3',
+  '比水倒水相公': '/audio/daoshui.mp3',
+  '相公倒水': '/audio/daoshui.mp3',
+  'daoshui': '/audio/daoshui.mp3',
+  '打枪': '/audio/gunshot.mp3',
+  '一枪命中': '/audio/gunshot.mp3',
+  '开火打枪': '/audio/gunshot.mp3',
+  'gunshot': '/audio/gunshot.mp3',
+  '全垒打': '/audio/chongsan.mp3',
+  '全垒打大满贯': '/audio/chongsan.mp3',
+  '通杀全场': '/audio/chongsan.mp3',
+  'chongsan': '/audio/chongsan.mp3',
+  '大满贯': '/audio/grand_slam.mp3',
+  '至尊大满贯': '/audio/grand_slam.mp3',
+  '十三水大满贯': '/audio/grand_slam.mp3',
+  'grand_slam': '/audio/grand_slam.mp3',
+
+  // 三道比牌
+  '头道': '/audio/head_tier.mp3',
+  '头道比较': '/audio/head_tier.mp3',
+  'head_tier': '/audio/head_tier.mp3',
+  '中道': '/audio/mid_tier.mp3',
+  '中道比较': '/audio/mid_tier.mp3',
+  'mid_tier': '/audio/mid_tier.mp3',
+  '尾道': '/audio/tail_tier.mp3',
+  '尾道比较': '/audio/tail_tier.mp3',
+  'tail_tier': '/audio/tail_tier.mp3',
+
+  // 牌型
+  '乌龙': '/audio/high_card.mp3',
+  '高牌': '/audio/high_card.mp3',
+  '散牌': '/audio/high_card.mp3',
+  'high_card': '/audio/high_card.mp3',
+  '三同花': '/audio/three_flushes.mp3',
+  '三副同花': '/audio/three_flushes.mp3',
+  'three_flushes': '/audio/three_flushes.mp3',
+  '三顺子': '/audio/three_straights.mp3',
+  '三副顺子': '/audio/three_straights.mp3',
+  'three_straights': '/audio/three_straights.mp3',
+  '至尊青龙': '/audio/supreme_dragon.mp3',
+  '清一色一条龙': '/audio/supreme_dragon.mp3',
+  'supreme_dragon': '/audio/supreme_dragon.mp3',
+  '一条龙': '/audio/dragon.mp3',
+  '普通一条龙': '/audio/dragon.mp3',
+  'dragon': '/audio/dragon.mp3',
+  '铁支': '/audio/tiezhi.mp3',
+  '炸弹铁支': '/audio/tiezhi.mp3',
+  'tiezhi': '/audio/tiezhi.mp3',
+  '六对半': '/audio/six_and_half_pairs.mp3',
+  '六对半特殊牌型': '/audio/six_and_half_pairs.mp3',
+  'six_and_half_pairs': '/audio/six_and_half_pairs.mp3',
+  '五同': '/audio/five_of_a_kind.mp3',
+  'five_of_a_kind': '/audio/five_of_a_kind.mp3',
+
+  // 交互音效
+  '智能理牌': '/audio/optimal_arrange.mp3',
+  '自动理牌': '/audio/optimal_arrange.mp3',
+  '最优排道': '/audio/optimal_arrange.mp3',
+  'optimal_arrange': '/audio/optimal_arrange.mp3',
+  '开始比水': '/audio/shisanshui_compare.mp3',
+  '十三水比水': '/audio/shisanshui_compare.mp3',
+  'shisanshui_compare': '/audio/shisanshui_compare.mp3',
+};

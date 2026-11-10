@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Remix go三个游戏34</title>
+    <meta name="description" content="A high-performance Rust and Vue chess platform running on Termux with real-time WebSocket multiplayer gameplay for Android." />
+    <meta property="og:title" content="Remix go三个游戏34" />
+    <meta property="og:description" content="A high-performance Rust and Vue chess platform running on Termux with real-time WebSocket multiplayer gameplay for Android." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#12100E" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="国粹棋牌" />
+    <link rel="icon" type="image/svg+xml" href="/pwa-icon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Noto+Serif+SC:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body class="bg-[#12100E] text-[#F5EFE6] antialiased selection:bg-amber-600/30 selection:text-amber-200">
+    <div id="app"></div>
+    <script>
+      // 预先同步加载内置在 APK 内的本地服务器配置 (0毫秒本地加载，保障原生环境下立即连通 .env 目标服务器)
+      (function() {
+        try {
+          var isNative = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:' || window.location.protocol === 'capacitor:';
+          if (isNative) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', '/app-config.json', false);
+            xhr.send(null);
+            if (xhr.status === 200 || xhr.status === 0) {
+              window.__APP_SERVER_CONFIG__ = JSON.parse(xhr.responseText);
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

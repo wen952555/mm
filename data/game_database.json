@@ -1,0 +1,129 @@
+{
+  "profiles": {},
+  "records": [],
+  "authorizedPhones": [
+    "13912345678"
+  ],
+  "adminPhones": [],
+  "adminLogs": [
+    {
+      "id": "log-1794060573958-2oj6",
+      "action": "USER_REGISTER",
+      "operator": "Telegram Auth",
+      "target": "13912345678",
+      "amount": 0,
+      "details": "白名单预建用户激活注册成功: 雀神一哥 (📱 13912345678, UID: USER-5678-281)，当前预设筹码: 0",
+      "timestamp": "14:09"
+    },
+    {
+      "id": "log-1793518897529-9t9v",
+      "action": "TG_AUTHPHONE",
+      "operator": "tester_admin",
+      "target": "13912345678",
+      "details": "Telegram 添加注册白名单手机号: 13912345678",
+      "timestamp": "07:41"
+    },
+    {
+      "id": "log-1792751912429-p168",
+      "action": "TG_DELPHONE",
+      "operator": "TestAdmin",
+      "target": "13988889999",
+      "details": "Telegram 移出白名单手机号: 13988889999，注销关联账号: 无注册用户",
+      "timestamp": "10:38"
+    },
+    {
+      "id": "log-1792751904320-a9vz",
+      "action": "TG_AUTHPHONE",
+      "operator": "TestAdmin",
+      "target": "13988889999",
+      "details": "Telegram 添加注册白名单手机号: 13988889999",
+      "timestamp": "10:38"
+    },
+    {
+      "id": "log-1792746797354-bfes",
+      "action": "TG_CLEARUSERS",
+      "operator": "Telegram Bot Admin",
+      "target": "全服",
+      "details": "清空所有注册茶客账号，共清理 1 个账号",
+      "timestamp": "09:13"
+    },
+    {
+      "id": "log-1792746797347-ct96",
+      "action": "TG_DELUSER",
+      "operator": "Telegram Bot Admin",
+      "target": "玩家A",
+      "details": "删除用户与注销手机号: 玩家A (USER-3903, 📱 13922223333)",
+      "timestamp": "09:13"
+    },
+    {
+      "id": "log-1792746797340-3a4x",
+      "action": "USER_REGISTER",
+      "operator": "Telegram Auth",
+      "target": "13933334444",
+      "amount": 8888,
+      "details": "新用户注册: 玩家B (USER-4081)",
+      "timestamp": "09:13"
+    },
+    {
+      "id": "log-1792746797275-scqg",
+      "action": "USER_REGISTER",
+      "operator": "Telegram Auth",
+      "target": "13922223333",
+      "amount": 8888,
+      "details": "新用户注册: 玩家A (USER-3903)",
+      "timestamp": "09:13"
+    },
+    {
+      "id": "log-1792746797193-1iqx",
+      "action": "TG_AUTHPHONE",
+      "operator": "Telegram Bot Admin",
+      "target": "13933334444",
+      "details": "Telegram 添加注册白名单手机号: 13933334444",
+      "timestamp": "09:13"
+    },
+    {
+      "id": "log-1792746797192-uu67",
+      "action": "TG_AUTHPHONE",
+      "operator": "Telegram Bot Admin",
+      "target": "13922223333",
+      "details": "Telegram 添加注册白名单手机号: 13922223333",
+      "timestamp": "09:13"
+    },
+    {
+      "id": "log-1792746787086-7kzf",
+      "action": "TG_DELPHONE",
+      "operator": "Telegram Bot Admin",
+      "target": "13911112222",
+      "details": "Telegram 移出白名单手机号: 13911112222，注销关联账号: 测试茶客 (testuser1)",
+      "timestamp": "09:13"
+    },
+    {
+      "id": "log-1792746787080-fmy9",
+      "action": "USER_REGISTER",
+      "operator": "Telegram Auth",
+      "target": "13911112222",
+      "amount": 8888,
+      "details": "新用户注册: 测试茶客 (USER-9470)",
+      "timestamp": "09:13"
+    },
+    {
+      "id": "log-1792746786993-5o6e",
+      "action": "TG_AUTHPHONE",
+      "operator": "Telegram Bot Admin",
+      "target": "13911112222",
+      "details": "Telegram 添加注册白名单手机号: 13911112222",
+      "timestamp": "09:13"
+    }
+  ],
+  "systemAnnouncements": [
+    {
+      "id": "ann-1",
+      "text": "欢迎诸位茶客牌友！茶楼已接入 Telegram 机器人管理员防作弊与筹码调控中枢。",
+      "author": "Telegram 总管",
+      "timestamp": "10:00"
+    }
+  ],
+  "revokedPhones": [
+    "13988889999"
+  ]
+}

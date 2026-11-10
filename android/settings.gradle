@@ -1,0 +1,9 @@
+// Settings file for Capacitor Android project
+include ':app'
+apply from: 'capacitor.settings.gradle'
+
+if (file('capacitor-cordova-android-plugins').exists()) {
+    include ':capacitor-cordova-android-plugins'
+    project(':capacitor-cordova-android-plugins').projectDir = new File('capacitor-cordova-android-plugins')
+}
+
