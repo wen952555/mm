@@ -1814,6 +1814,25 @@ wss.on('connection', (ws) => {
             });
 
             if (submittedCount >= targetCount) {
+              const targetSceneRoom = sceneWaitingRooms.get(room.id);
+              if (targetSceneRoom) {
+                targetSceneRoom.status = 'finished';
+                targetSceneRoom.players.forEach((pl: any) => {
+                  pl.isReady = false;
+                });
+                broadcast({
+                  type: 'scene_room_update',
+                  roomId: targetSceneRoom.id,
+                  gameType: targetSceneRoom.gameType,
+                  sceneMode: targetSceneRoom.sceneMode,
+                  players: targetSceneRoom.players,
+                  maxPlayers: targetSceneRoom.maxPlayers,
+                  status: targetSceneRoom.status,
+                });
+              }
+              room.status = 'finished';
+              if (bs) bs.phase = 'ended';
+
               broadcast({
                 type: 'game_event',
                 roomId: room.id,
@@ -1969,6 +1988,25 @@ setInterval(() => {
               };
             }
           }
+          const targetSceneRoom = sceneWaitingRooms.get(room.id);
+          if (targetSceneRoom) {
+            targetSceneRoom.status = 'finished';
+            targetSceneRoom.players.forEach((pl: any) => {
+              pl.isReady = false;
+            });
+            broadcast({
+              type: 'scene_room_update',
+              roomId: targetSceneRoom.id,
+              gameType: targetSceneRoom.gameType,
+              sceneMode: targetSceneRoom.sceneMode,
+              players: targetSceneRoom.players,
+              maxPlayers: targetSceneRoom.maxPlayers,
+              status: targetSceneRoom.status,
+            });
+          }
+          room.status = 'finished';
+          if (bs) bs.phase = 'ended';
+
           broadcast({
             type: 'game_event',
             roomId: room.id,

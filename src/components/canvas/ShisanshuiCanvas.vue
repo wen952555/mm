@@ -849,7 +849,7 @@ const readyPlayersCount = computed(() => {
   if (!props.roomPlayers || props.roomPlayers.length === 0) return hasClickedReady.value ? total : 1;
   const count = props.roomPlayers.filter((p: any, idx: number) => {
     if (!p || p.isAi || p.isSimulated || p.isBot || p.id?.startsWith('BOT-') || p.id?.startsWith('sim-')) return true;
-    if (idx === 0) return hasClickedReady.value || Boolean(p.isReady);
+    if (idx === mySeat.value) return hasClickedReady.value || Boolean(p.isReady);
     return Boolean(p.isReady);
   }).length;
   return Math.min(total, Math.max(1, count));
@@ -1608,9 +1608,10 @@ function handleReconnectSync(msg: any) {
   saveLocalSnapshot();
 }
 
-function dealNewMatch(forceReApply = false) {
-  if (!props.isPracticeMode && props.initialDeal?.seatCards) {
-    const dealIdentifier = props.initialDeal.dealId || props.initialDeal.createdAt || (Array.isArray(props.initialDeal.seatCards[0]) ? props.initialDeal.seatCards[0].map((c: any) => c.id).join('-') : '');
+function dealNewMatch(forceReApply = false, overrideDeal?: any) {
+  const activeDeal = overrideDeal || props.initialDeal;
+  if (!props.isPracticeMode && activeDeal?.seatCards) {
+    const dealIdentifier = activeDeal.dealId || activeDeal.createdAt || (Array.isArray(activeDeal.seatCards[0]) ? activeDeal.seatCards[0].map((c: any) => c.id).join('-') : '');
     if (!forceReApply && lastAppliedDealId.value && lastAppliedDealId.value === dealIdentifier && fullHand.value && fullHand.value.length > 0) {
       console.log(`🛡️ [十三水网络波动防重刷] 发牌 ${dealIdentifier} 已在桌上执行，跳过重复洗牌与重置`);
       return;
@@ -1619,6 +1620,11 @@ function dealNewMatch(forceReApply = false) {
   } else if (props.isPracticeMode) {
     lastAppliedDealId.value = `practice-${Date.now()}`;
   }
+
+  // 关键重置：开局发牌时重置准备与快照，确保“继续下一局”能无限顺畅循环
+  hasClickedReady.value = false;
+  clearLocalSnapshot();
+
   triggerDealingCeremony();
   if (isBookingScene.value) {
     initBookingTrainMode();
@@ -1631,12 +1637,12 @@ function dealNewMatch(forceReApply = false) {
   let newPlayerCards: Card[] = [];
   const opps: PlayerTiers[] = [];
 
-  // 权威发牌检查：在联机且存在来自服务器同一副牌的 initialDeal 时，全员严格使用同一副牌切片！
-  const rawDealCards = props.initialDeal?.seatCards;
+  // 权威发牌检查：在联机且存在来自服务器同一副牌的 activeDeal 时，全员严格使用同一副牌切片！
+  const rawDealCards = activeDeal?.seatCards;
   const hasValidDeal = !props.isPracticeMode && rawDealCards && (Array.isArray(rawDealCards) ? rawDealCards.length >= totalSeats : Object.keys(rawDealCards).length >= totalSeats);
   if (hasValidDeal) {
     const seatIdx = mySeat.value;
-    newPlayerCards = (props.initialDeal.seatCards[seatIdx] || []).map((c: any) => ({
+    newPlayerCards = (rawDealCards[seatIdx] || []).map((c: any) => ({
       id: c.id,
       rank: c.rank,
       suit: c.suit,
@@ -1647,7 +1653,7 @@ function dealNewMatch(forceReApply = false) {
     // 其他席位取自服务器发牌数据
     for (let i = 0; i < totalSeats; i++) {
       if (i === seatIdx) continue;
-      const rawOppCards: Card[] = (props.initialDeal.seatCards[i] || []).map((c: any) => ({
+      const rawOppCards: Card[] = (rawDealCards[i] || []).map((c: any) => ({
         id: c.id,
         rank: c.rank,
         suit: c.suit,
@@ -2840,16 +2846,16 @@ function onWsMessage(ev: MessageEvent) {
       handleReconnectSync(msg);
     } else if (msg.type === 'game_deal') {
       if (msg.deal) {
-        dealNewMatch(true);
+        dealNewMatch(true, msg.deal);
       }
     } else if (msg.type === 'scene_room_full' || msg.type === 'scene_room_started') {
       if (msg.deal) {
         const dealIdentifier = msg.deal.dealId || msg.deal.createdAt || (Array.isArray(msg.deal.seatCards?.[0]) ? msg.deal.seatCards[0].map((c: any) => c.id).join('-') : '');
-        if (dealIdentifier && dealIdentifier === lastAppliedDealId.value && fullHand.value && fullHand.value.length > 0) {
+        if (dealIdentifier && dealIdentifier === lastAppliedDealId.value && fullHand.value && fullHand.value.length > 0 && !hasCompared.value) {
           console.log('🛡️ [十三水联机防抖] 该局手牌已就绪，保持对局状态');
           return;
         }
-        dealNewMatch(false);
+        dealNewMatch(true, msg.deal);
       }
     } else if (msg.type === 'game_event') {
       const evt = msg.event || msg.payload;
