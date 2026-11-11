@@ -1579,6 +1579,17 @@ function chessWebSocketPlugin(): Plugin {
                         (room as any).deal.seatCards[seat].push(supp);
                       }
                     }
+                    if (!bs.seatKongScores) bs.seatKongScores = [0, 0, 0, 0];
+                    const targetOpp = p.fromSeat ?? p.targetSeat ?? p.discardBy;
+                    if (typeof targetOpp === 'number' && targetOpp >= 0 && targetOpp !== seat) {
+                      bs.seatKongScores[seat] += 10;
+                      bs.seatKongScores[targetOpp] -= 10;
+                    } else {
+                      for (let k = 0; k < 4; k++) {
+                        if (k !== seat) bs.seatKongScores[k] -= 10;
+                      }
+                      bs.seatKongScores[seat] += 30;
+                    }
                     bs.turnSeat = seat;
                     room.turnSeat = bs.turnSeat;
                   } else if (action === 'pass') {

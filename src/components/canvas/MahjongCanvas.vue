@@ -3709,7 +3709,8 @@ function passTurnToNext(fromRelSeat: number) {
       drawTable();
       saveLocalSnapshot();
 
-      if (isSeatBot(nextAbsSeat)) {
+      const isOnlineServerRoom = !props.isPracticeMode && props.ws && props.ws.readyState === WebSocket.OPEN;
+      if (!isOnlineServerRoom && isSeatBot(nextAbsSeat)) {
         if (isSeatDisconnected(nextAbsSeat)) {
           tipMessage.value = `🤖 【${SEAT_NAMES[nextRelSeat]}】 离线托管自动出牌中...`;
         } else if (isSeatAutoManaged(nextAbsSeat)) {
@@ -3717,15 +3718,21 @@ function passTurnToNext(fromRelSeat: number) {
         }
         const thinkTime = Math.floor(400 + Math.random() * 400);
         const t = setTimeout(() => {
-          if (hasWon.value || showSettlement.value || isDrawStalemate.value || dealingPhase.value !== 'playing') return;
+          if (hasWon.value || showSettlement.value || dealingPhase.value !== 'playing') return;
           botPlay(nextRelSeat, () => {
             passTurnToNext(nextRelSeat);
           });
         }, thinkTime);
         botActionTimers.push(t);
       } else {
-        // 🛡️ 真实连线牌友席位：等待真实玩家通过网络打牌，严禁本地代码替其代打！
-        tipMessage.value = `轮到 【${SEAT_NAMES[nextRelSeat]}】 出牌...`;
+        // 🛡️ 联机网络或真实牌友席位：由服务端统一推送对局事件，客户端仅更新显示，等待网络消息！
+        if (isSeatDisconnected(nextAbsSeat)) {
+          tipMessage.value = `🤖 【${SEAT_NAMES[nextRelSeat]}】 离线托管自动出牌中...`;
+        } else if (isSeatAutoManaged(nextAbsSeat)) {
+          tipMessage.value = `⚡ 【${SEAT_NAMES[nextRelSeat]}】 托管自动出牌中...`;
+        } else {
+          tipMessage.value = `轮到 【${SEAT_NAMES[nextRelSeat]}】 出牌...`;
+        }
         drawTable();
       }
     });
@@ -3957,9 +3964,20 @@ function handleRemoteGameEvent(evtAbsSeat: number, evt: any) {
     drawTable();
     saveLocalSnapshot();
 
-    waitForPlayerClaim(() => {
-      passTurnToNext(relSeat);
-    });
+    const isOnlineServerRoom = !props.isPracticeMode && props.ws && props.ws.readyState === WebSocket.OPEN;
+    if (isOnlineServerRoom) {
+      if ((canPeng.value || canGang.value) && !hasWon.value && !isDrawStalemate.value && dealingPhase.value === 'playing') {
+        isClaiming.value = true;
+        claimCountdown.value = 10;
+        pendingClaimNext = () => {
+          sendGameMove('pass', { absSeat: mySeat.value });
+        };
+      }
+    } else {
+      waitForPlayerClaim(() => {
+        passTurnToNext(relSeat);
+      });
+    }
   } else if (evt.action === 'peng') {
     const tile = evt.tile || lastDiscarded.value;
     const oppHand = oppHands.value[botIdx] || [];
@@ -4138,11 +4156,11 @@ function onWsMessage(ev: MessageEvent) {
         return;
       }
 
-      const moveCount = typeof msg.moveCount === 'number' ? msg.moveCount : -1;
-      const moveKey = `${evt.absSeat}_${evt.action}_${evt.tile?.id || ''}`;
+      const moveCount = typeof msg.moveCount === 'number' ? msg.moveCount : (typeof evt.moveCount === 'number' ? evt.moveCount : -1);
+      const moveKey = `${evt.absSeat}_${evt.action}_${evt.tile?.id || evt.tile?.value || ''}_${evt.wallRemaining ?? ''}_${moveCount > 0 ? moveCount : Date.now()}`;
 
       if (moveCount > 0 && moveCount === lastProcessedMoveCount) return;
-      if (moveKey && moveKey === lastProcessedMoveKey && moveCount <= 0) return;
+      if (moveCount <= 0 && moveKey && moveKey === lastProcessedMoveKey) return;
 
       if (moveCount > 0) lastProcessedMoveCount = moveCount;
       lastProcessedMoveKey = moveKey;
